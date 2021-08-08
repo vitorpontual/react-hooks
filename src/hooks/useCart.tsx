@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { api } from '../services/api';
-import { Product, Stock } from '../types';
+import { Product } from '../types';
 
 interface CartProviderProps {
   children: ReactNode;
@@ -28,42 +28,45 @@ export function CartProvider({ children }: CartProviderProps): JSX.Element {
     if (storagedCart) {
       return JSON.parse(storagedCart);
     }
-
     return [];
   });
 
-  const prevCartRef = useRef<Product[]>();
-
+  /* const prevCartRef = useRef<Product[]>();
   useEffect(() => {
     prevCartRef.current = cart;
   })
-  
   const cartPreviousValue = prevCartRef.current ?? cart;
-
+ */
   useEffect(() => {
-    if (cartPreviousValue !== cart){
-      localStorage.setItem('@RocketShoes:cart', JSON.stringify(cart))        
+    // if (cartPreviousValue !== cart) {
+      localStorage.setItem('@RocketShoes:cart', JSON.stringify(cart))
+    // }
+  }, [cart, /* cartPreviousValue */])
 
-    }
-  }, [cart, cartPreviousValue])
+  async function checkProductStockAvailability(productId: number, amount: number){
+    const { data: stock } = await api.get(`stock/${productId}`)
+
+    const isStockAvailable = stock.amount < amount;
+
+    return isStockAvailable
+  }
 
   const addProduct = async (productId: number) => {
     try {
       const updatedCart = [...cart];
       const productExists = updatedCart.find(product => product.id === productId)
 
-      const stock = await api.get(`stock/${productId}`)
-
-      const stockAmount = stock.data.amount;
+      
       const currentAmount = productExists ? productExists.amount : 0;
       const amount = currentAmount + 1;
+      const stockAvailable = await checkProductStockAvailability(productId, amount)
 
-      if(amount  > stockAmount){
+      if (stockAvailable) {
         toast.error('Quantidade solicitada fora de estoque');
         return
       }
 
-      if(productExists){
+      if (productExists) {
         productExists.amount = amount;
       } else {
         const product = await api.get(`products/${productId}`)
@@ -85,14 +88,16 @@ export function CartProvider({ children }: CartProviderProps): JSX.Element {
   const removeProduct = (productId: number) => {
     try {
       const updatedCart = [...cart]
-      const productIndex = updatedCart.findIndex(product => product.id === productId)
+      const isProductOnCart = updatedCart.some(product => product.id === productId)
 
-      if(productIndex >= 0){
-        updatedCart.splice(productIndex, 1)
-        setCart(updatedCart)
-      } else {
+      if (!isProductOnCart) {
         throw Error();
       }
+
+      const newCart = updatedCart.filter(product => {
+        return product.id !== productId
+      })
+      setCart(newCart)
     } catch {
       toast.error('Erro na remoção do produto')
     }
@@ -103,15 +108,13 @@ export function CartProvider({ children }: CartProviderProps): JSX.Element {
     amount,
   }: UpdateProductAmount) => {
     try {
-      if(amount <= 0){
-        return;
+      if (amount <= 0) {
+        return removeProduct(productId)
       }
 
-      const stock = await api.get(`stock/${productId}`);
-      
-      const stockAmount = stock.data.amount;
+      const stockAvailable = await checkProductStockAvailability(productId, amount)
 
-      if(amount > stockAmount){
+      if (stockAvailable) {
         toast.error('Quantidade solicitada fora de estoque')
         return
       }
@@ -119,7 +122,7 @@ export function CartProvider({ children }: CartProviderProps): JSX.Element {
       const updatedCart = [...cart];
       const productExists = updatedCart.find(product => product.id === productId)
 
-      if(productExists){
+      if (productExists) {
         productExists.amount = amount;
         setCart(updatedCart);
       } else {
@@ -129,6 +132,7 @@ export function CartProvider({ children }: CartProviderProps): JSX.Element {
       toast.error('Erro na alteração de quantidade do produto')
     }
   };
+
 
   return (
     <CartContext.Provider
